@@ -1,72 +1,87 @@
 import os
 import shutil
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
+class PluginManager:
+    def __init__(self, flash_drive_path=None):
+        self.flash_drive_path = flash_drive_path
+        self.plugin_directories = []
 
-class PluginManager(tk.Frame):
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.master = master
+        if self.flash_drive_path:
+            self.flash_drive_plugins_dir = os.path.join(self.flash_drive_path, "FlashDrivePlugins")
+            self.scan_directory(self.flash_drive_plugins_dir)
+        else:
+            self.default_vst3_dir = "/Library/Audio/Plug-Ins/VST3"
+            self.default_vst2_dir = "/Library/Audio/Plug-Ins/VST"
+            self.default_audio_unit_dir = "/Library/Audio/Plug-Ins/Components"
+            self.default_aax_dir = "/Library/Application Support/Avid/Audio/Plug-Ins"
+
+            self.scan_directory(self.default_vst3_dir)
+            self.scan_directory(self.default_vst2_dir)
+            self.scan_directory(self.default_audio_unit_dir)
+            self.scan_directory(self.default_aax_dir)
+
+        if not self.plugin_directories:
+            messagebox.showinfo("No plugins found", "No plugins were found in the default locations.")
+
+        if self.flash_drive_path:
+            if not os.path.exists(self.flash_drive_plugins_dir):
+                os.mkdir(self.flash_drive_plugins_dir)
+                messagebox.showinfo("FlashDrivePlugins created", f"FlashDrivePlugins folder has been created in {self.flash_drive_path}")
+            else:
+                messagebox.showinfo("FlashDrivePlugins exists", f"FlashDrivePlugins folder already exists in {self.flash_drive_path}")
+
+        self.master = tk.Tk()
         self.master.title("Plugin Manager")
-        self.master.geometry("400x150")
-        self.create_widgets()
 
-        # Default plugin directories to scan
-        self.default_plugin_dirs = [
-            "/Library/Audio/Plug-Ins/VST",
-            "/Library/Audio/Plug-Ins/VST3",
-            "/Library/Audio/Plug-Ins/Components",
-            "/Library/Application Support/Avid/Audio/Plug-Ins",
-            os.path.expanduser("~/Library/Audio/Plug-Ins/VST"),
-            os.path.expanduser("~/Library/Audio/Plug-Ins/VST3"),
-            os.path.expanduser("~/Library/Audio/Plug-Ins/Components"),
-            os.path.expanduser("~/Library/Application Support/Avid/Audio/Plug-Ins"),
-        ]
-        self.file_extensions = (".vst3", ".vst", ".component", ".aaxplugin")
+        self.plugin_listbox = tk.Listbox(self.master)
+        self.plugin_listbox.pack(expand=True, fill="both")
 
-    def create_widgets(self):
-        self.scan_add_button = tk.Button(self.master, text="Scan and Add Plugins", command=self.scan_and_add_plugins)
-        self.scan_add_button.pack(pady=10)
+        self.copy_button = tk.Button(self.master, text="Copy to Flash Drive", command=self.copy_to_flash_drive)
+        self.copy_button.pack(side="right")
 
-        self.destination_label = tk.Label(self.master, text="Destination folder:")
-        self.destination_label.pack()
+        self.delete_button = tk.Button(self.master, text="Delete from Flash Drive", command=self.delete_from_flash_drive)
+        self.delete_button.pack(side="left")
 
-        self.destination_path = tk.StringVar()
-        self.destination_path.set(os.path.expanduser("~/Desktop"))
-        self.destination_entry = tk.Entry(self.master, textvariable=self.destination_path)
-        self.destination_entry.pack()
+        for plugin_dir in self.plugin_directories:
+            for root, dirs, files in os.walk(plugin_dir):
+                for file in files:
+                    if file.endswith((".aaxplugin", ".vst3", ".vst", ".component")):
+                        self.plugin_listbox.insert(tk.END, os.path.join(root, file))
 
-        self.choose_folder_button = tk.Button(self.master, text="Choose folder", command=self.choose_destination_folder)
-        self.choose_folder_button.pack(pady=10)
+    def scan_directory(self, dir_path):
+        if os.path.exists(dir_path):
+            self.plugin_directories.append(dir_path)
+            for root, dirs, files in os.walk(dir_path):
+                for dir in dirs:
+                    self.plugin_directories.append(os.path.join(root, dir))
+        else:
+            print(f"{dir_path} not found.")
 
-    def choose_destination_folder(self):
-        folder_path = filedialog.askdirectory()
-        if folder_path:
-            self.destination_path.set(folder_path)
+    def copy_to_flash_drive(self):
+        if not self.flash_drive_path:
+            messagebox.showerror("Error", "No flash drive detected.")
+            return
 
-    def scan_and_add_plugins(self):
-        print("Scanning and adding plugins...")
-        for plugins_dir in self.default_plugin_dirs:
-            print(f"Checking directory: {plugins_dir}")
-            if os.path.isdir(plugins_dir):
-                for root, _, files in os.walk(plugins_dir):
-                    for file in files:
-                        if file.endswith(self.file_extensions):
-                            plugin_path = os.path.join(root, file)
-                            print(f"Found file: {file}")
-                            self.add_plugin(plugin_path)
-        messagebox.showinfo("Success", "Plugins found in the default locations have been added to the FlashDrivePlugins folder.")
+        selected_plugins = self.plugin_listbox.curselection()
 
-    def add_plugin(self, plugin_path):
-        destination_folder = os.path.join(self.destination_path.get(), "FlashDrivePlugins")
-        if not os.path.exists(destination_folder):
-            os.makedirs(destination_folder)
+        if not selected_plugins:
+            messagebox.showerror("Error", "No plugins selected.")
+            return
 
-        shutil.copy2(plugin_path, destination_folder)
+        for index in selected_plugins:
+            plugin_path = self.plugin_listbox.get(index)
+            plugin_name = os.path.basename(plugin_path)
+            target_dir = os.path.join(self.flash_drive_plugins_dir, plugin_name)
 
+            try:
+                shutil.copytree(plugin_path, target_dir)
+            except FileExistsError:
+                shutil.rmtree(target_dir)
+                shutil.copytree(plugin_path, target_dir)
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = PluginManager(master=root)
-    app.mainloop()
+        messagebox.showinfo("Copy Successful", "Selected plugins have been copied to the FlashDrivePlugins folder.")
+
+    def delete_from_flash_drive(self):
+        "if not self.flash_drive"
